@@ -1,5 +1,7 @@
 # Morgen — Outfitplaner
 
+**[Android-APK herunterladen](android/app/build/outputs/apk/debug/app-debug.apk)**
+
 Eine eigenständige, lokal nutzbare Web-App für Garderobe, Outfit-Kombinationen und Tagesplanung. Sie ist eine neue Implementierung und enthält keine extrahierten Inhalte oder Programmteile der APK.
 
 ## Starten
