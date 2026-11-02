@@ -43,13 +43,18 @@ function loadState() {
   return { items: initialItems, outfits: initialOutfits, plans, nextAdded: 9 };
 }
 let state = loadState();
-state.context ||= { weather: 'mild', occasion: 'everyday', mood: 'relaxed', note: 'Wähle Wetter, Anlass und Stimmung für einen persönlichen Vorschlag.' };
+state.context ||= { weather: 'mild', occasion: 'everyday', mood: 'relaxed', prompt: '', note: 'Wähle Wetter, Anlass und Stimmung für einen persönlichen Vorschlag.' };
+state.context.prompt ||= '';
+state.aiEndpoint ||= '';
+state.aiConsent = Boolean(state.aiConsent);
 let currentView = 'today';
 let closetFilter = 'all';
 let lookFilter = 'all';
 let searchTerm = '';
 let calendarDate = new Date();
 let toastTimer;
+let pendingAnalysis = null;
+let aiToken = '';
 
 function saveState() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
 function dateKey(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
@@ -81,12 +86,20 @@ function setView(view) {
   if (view === 'calendar') renderCalendar();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+function openSettings() {
+  const form = document.querySelector('#settings-form');
+  form.elements.aiEndpoint.value = state.aiEndpoint;
+  form.elements.aiToken.value = aiToken;
+  form.elements.aiConsent.checked = state.aiConsent;
+  document.querySelector('#settings-dialog').showModal();
+}
 
 function renderToday() {
   const today = new Date();
   document.querySelector('#context-weather').value = state.context.weather;
   document.querySelector('#context-occasion').value = state.context.occasion;
   document.querySelector('#context-mood').value = state.context.mood;
+  document.querySelector('#daily-prompt').value = state.context.prompt;
   document.querySelector('#recommendation-note').textContent = state.context.note;
   document.querySelector('#today-date').textContent = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).format(today).toUpperCase();
   document.querySelector('#week-strip').innerHTML = Array.from({ length: 7 }, (_, index) => {
@@ -115,7 +128,7 @@ function renderToday() {
 function renderCloset() {
   const items = state.items.filter(item => (closetFilter === 'all' || item.category === closetFilter) && `${item.name} ${item.brand} ${item.note}`.toLowerCase().includes(searchTerm.toLowerCase()));
   items.sort((a, b) => document.querySelector('#sort-items').value === 'name' ? a.name.localeCompare(b.name, 'de') : b.added - a.added);
-  document.querySelector('#closet-grid').innerHTML = items.map((item, index) => `<article class="closet-card" style="animation-delay:${Math.min(index * 30, 180)}ms"><div class="closet-image-wrap" style="--item-bg:${colorValues[item.color] || '#e8e4dc'}">${itemImage(item, 'closet-image')}<span class="item-category">${escapeHtml(categoryNames[item.category])}</span><button class="item-menu" data-item-detail="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.name)} Details">···</button></div><div class="closet-card-info"><h3>${escapeHtml(item.name)}</h3><div class="item-meta"><i class="color-dot" style="background:${colorValues[item.color] || '#ccc'}"></i>${escapeHtml(colorNames[item.color] || 'Farbe')}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}</div><div class="closet-card-footer"><span class="wear-count">${item.wears || 0}× getragen</span><button class="wear-plus" data-wear="${escapeHtml(item.id)}">+ getragen</button></div></div></article>`).join('');
+  document.querySelector('#closet-grid').innerHTML = items.map((item, index) => `<article class="closet-card" style="animation-delay:${Math.min(index * 30, 180)}ms"><div class="closet-image-wrap" style="--item-bg:${colorValues[item.color] || '#e8e4dc'}">${itemImage(item, 'closet-image')}<span class="item-category">${escapeHtml(categoryNames[item.category])}</span><button class="item-menu" data-item-detail="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.name)} Details">···</button></div><div class="closet-card-info"><h3>${escapeHtml(item.name)}</h3><div class="item-meta"><i class="color-dot" style="background:${colorValues[item.color] || '#ccc'}"></i>${escapeHtml(colorNames[item.color] || 'Farbe')}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}</div>${item.palette?.length ? `<div class="item-palette">${item.palette.map(color => `<i style="--swatch:${color}"></i>`).join('')}</div>` : ''}<div class="closet-card-footer"><span class="wear-count">${item.wears || 0}× getragen</span><button class="wear-plus" data-wear="${escapeHtml(item.id)}">+ getragen</button></div></div></article>`).join('');
   document.querySelector('#closet-empty').classList.toggle('hidden', items.length > 0);
   document.querySelector('#closet-grid').classList.toggle('hidden', items.length === 0);
   document.querySelectorAll('#closet-filters .filter-chip').forEach(button => button.classList.toggle('selected', button.dataset.filter === closetFilter));
@@ -154,7 +167,7 @@ function openItemDialog(item = null) {
   const form = document.querySelector('#item-form');
   form.reset();
   form.elements.itemId.value = item?.id || '';
-  form.elements.cameraPhoto.value = '';
+  form.elements.cameraPhoto.value = item?.image?.startsWith('data:image') ? item.image : '';
   const preview = form.querySelector('#item-photo-preview');
   preview.hidden = !item;
   if (item) {
@@ -165,6 +178,7 @@ function openItemDialog(item = null) {
     form.elements.note.value = item.note || '';
     preview.src = item.image;
   }
+  document.querySelector('#analyze-photo').disabled = !form.elements.cameraPhoto.value;
   form.querySelector('h2').textContent = item ? 'Teil bearbeiten' : 'Teil hinzufügen';
   form.querySelector('[type="submit"]').textContent = item ? 'Änderungen speichern' : 'Teil speichern';
   document.querySelector('#item-dialog').showModal();
@@ -172,6 +186,7 @@ function openItemDialog(item = null) {
 function initializePhotoCapture() {
   const form = document.querySelector('#item-form');
   const photoInput = form.querySelector('input[name="photo"]');
+  const analyzeButton = document.querySelector('#analyze-photo');
   const cameraData = document.createElement('input');
   cameraData.type = 'hidden';
   cameraData.name = 'cameraPhoto';
@@ -190,6 +205,7 @@ function initializePhotoCapture() {
   photoInput.addEventListener('change', () => {
     cameraData.value = '';
     const file = photoInput.files?.[0];
+    analyzeButton.disabled = !file;
     if (!file) { preview.hidden = true; return; }
     preview.src = URL.createObjectURL(file);
     preview.hidden = false;
@@ -207,10 +223,12 @@ function initializePhotoCapture() {
       photoInput.value = '';
       preview.src = cameraData.value;
       preview.hidden = !cameraData.value;
+      analyzeButton.disabled = !cameraData.value;
     } catch (error) {
       if (!String(error).toLowerCase().includes('cancel')) showToast('Kamera oder Fotoauswahl konnte nicht geöffnet werden.');
     }
   });
+  analyzeButton.addEventListener('click', analyzePhoto);
 }
 function readResizedImage(file) {
   return new Promise((resolve, reject) => {
@@ -231,6 +249,133 @@ function readResizedImage(file) {
     };
     reader.readAsDataURL(file);
   });
+}
+function cropImage(dataUrl, bounds) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onerror = reject;
+    image.onload = () => {
+      const box = Array.isArray(bounds) ? bounds : bounds ? [bounds.x, bounds.y, bounds.width, bounds.height] : null;
+      if (!box || box.length !== 4 || !box.every(Number.isFinite)) { resolve(dataUrl); return; }
+      const scale = Math.max(...box) > 1 ? 1000 : 1;
+      const x = Math.max(0, Math.min(1, box[0] / scale));
+      const y = Math.max(0, Math.min(1, box[1] / scale));
+      const width = Math.max(0.01, Math.min(1 - x, box[2] / scale));
+      const height = Math.max(0.01, Math.min(1 - y, box[3] / scale));
+      const cropWidth = image.naturalWidth * width;
+      const cropHeight = image.naturalHeight * height;
+      const resize = Math.min(1, 900 / Math.max(cropWidth, cropHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(cropWidth * resize));
+      canvas.height = Math.max(1, Math.round(cropHeight * resize));
+      canvas.getContext('2d').drawImage(image, image.naturalWidth * x, image.naturalHeight * y, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    image.src = dataUrl;
+  });
+}
+function extractPalette(dataUrl, bounds) {
+  return new Promise(resolve => {
+    const image = new Image();
+    image.onerror = () => resolve(['#c9c4b8']);
+    image.onload = () => {
+      const box = Array.isArray(bounds) ? bounds : bounds ? [bounds.x, bounds.y, bounds.width, bounds.height] : null;
+      const x = box ? Math.max(0, Math.round(box[0] * image.naturalWidth)) : 0;
+      const y = box ? Math.max(0, Math.round(box[1] * image.naturalHeight)) : 0;
+      const width = box ? Math.min(image.naturalWidth - x, Math.round(box[2] * image.naturalWidth)) : image.naturalWidth;
+      const height = box ? Math.min(image.naturalHeight - y, Math.round(box[3] * image.naturalHeight)) : image.naturalHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = 32; canvas.height = 32;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(image, x, y, width, height, 0, 0, 32, 32);
+      const pixels = context.getImageData(0, 0, 32, 32).data;
+      const buckets = new Map();
+      for (let index = 0; index < pixels.length; index += 16) {
+        const red = Math.round(pixels[index] / 32) * 32;
+        const green = Math.round(pixels[index + 1] / 32) * 32;
+        const blue = Math.round(pixels[index + 2] / 32) * 32;
+        const key = [red, green, blue].map(value => Math.min(255, value).toString(16).padStart(2, '0')).join('');
+        buckets.set(key, (buckets.get(key) || 0) + 1);
+      }
+      resolve([...buckets.entries()].sort((first, second) => second[1] - first[1]).slice(0, 4).map(([hex]) => `#${hex}`));
+    };
+    image.src = dataUrl;
+  });
+}
+const categoryAliases = {
+  top: 'top', shirt: 'top', blouse: 'top', sweater: 'top', knitwear: 'top', dress: 'top',
+  bottom: 'bottom', pants: 'bottom', trousers: 'bottom', jeans: 'bottom', skirt: 'bottom', shorts: 'bottom',
+  outerwear: 'outerwear', jacket: 'outerwear', coat: 'outerwear', blazer: 'outerwear',
+  shoes: 'shoes', footwear: 'shoes', sneakers: 'shoes', boots: 'shoes',
+  accessory: 'accessory', accessories: 'accessory', bag: 'accessory', jewelry: 'accessory', hat: 'accessory', scarf: 'accessory'
+};
+function normalizeDetection(result) {
+  const rawCategory = String(result.category || result.type || '').toLowerCase();
+  const category = categoryAliases[rawCategory] || (rawCategory.includes('shoe') ? 'shoes' : rawCategory.includes('jack') || rawCategory.includes('coat') ? 'outerwear' : rawCategory.includes('pant') || rawCategory.includes('skirt') ? 'bottom' : rawCategory.includes('access') || rawCategory.includes('bag') ? 'accessory' : 'top');
+  const rawColor = String(result.color || '').toLowerCase();
+  const colorAliases = { white: 'cream', beige: 'cream', ivory: 'cream', navy: 'blue', grey: 'black', gray: 'black', brown: 'cream', orange: 'red', purple: 'pink' };
+  const color = colorNames[rawColor] ? rawColor : colorAliases[rawColor] || 'multi';
+  const bbox = result.bbox || result.box || null;
+  const palette = Array.isArray(result.palette) ? result.palette.filter(value => /^#[0-9a-f]{6}$/i.test(value)).slice(0, 5) : [];
+  return {
+    name: String(result.name || result.label || 'Kleidungsstück').slice(0, 60),
+    category,
+    color,
+    palette,
+    brand: String(result.brand || '').slice(0, 40),
+    material: String(result.material || '').slice(0, 50),
+    note: String(result.description || result.details || result.notes || '').slice(0, 140),
+    bbox,
+    confidence: Number.isFinite(Number(result.confidence)) ? Math.max(0, Math.min(1, Number(result.confidence))) : null
+  };
+}
+async function renderAnalysisResults(items, sourceImage) {
+  pendingAnalysis = { items, sourceImage };
+  const thumbnails = await Promise.all(items.map(item => cropImage(sourceImage, item.bbox).catch(() => sourceImage)));
+  const categories = Object.entries(categoryNames).map(([value, name]) => `<option value="${value}">${escapeHtml(name)}</option>`).join('');
+  const colors = Object.entries(colorNames).map(([value, name]) => `<option value="${value}">${escapeHtml(name)}</option>`).join('');
+  document.querySelector('#analysis-heading').textContent = `${items.length} ${items.length === 1 ? 'Teil' : 'Teile'} erkannt`;
+  document.querySelector('#analysis-items').innerHTML = items.map((item, index) => {
+    const palette = item.palette.length ? item.palette : ['#d7d1c5'];
+    return `<article class="analysis-item" data-analysis-index="${index}"><label class="analysis-select"><input type="checkbox" data-analysis-include checked><span>Übernehmen</span></label><div class="analysis-item-main"><img src="${escapeHtml(thumbnails[index])}" alt="${escapeHtml(item.name)}" class="analysis-thumb"><div class="analysis-item-fields"><label>Name<input data-analysis-name maxlength="60" value="${escapeHtml(item.name)}"></label><div class="field-row"><label>Kategorie<select data-analysis-category>${categories}</select></label><label>Grundfarbe<select data-analysis-color>${colors}</select></label></div><div class="analysis-palette">${palette.map(color => `<i style="--swatch:${color}" title="${color}"></i>`).join('')}<span>${item.confidence === null ? '' : `${Math.round(item.confidence * 100)} % Sicherheit`}</span></div><p>${escapeHtml([item.material, item.note].filter(Boolean).join(' · ') || 'Farben und Details bitte kurz prüfen.')}</p></div></div></article>`;
+  }).join('');
+  document.querySelectorAll('.analysis-item').forEach((card, index) => {
+    card.querySelector('[data-analysis-category]').value = items[index].category;
+    card.querySelector('[data-analysis-color]').value = items[index].color;
+  });
+  document.querySelector('#analysis-dialog').showModal();
+}
+async function analyzePhoto() {
+  if (!state.aiEndpoint || !state.aiConsent) {
+    showToast('Hinterlege KI-Server und Proxy-Token und bestätige den Foto-Upload in den Einstellungen.');
+    openSettings();
+    return;
+  }
+  const form = document.querySelector('#item-form');
+  const cameraData = form.elements.cameraPhoto.value;
+  const file = form.elements.photo.files?.[0];
+  if (!cameraData && !file) { showToast('Nimm erst ein Foto auf oder wähle eines aus.'); return; }
+  const button = document.querySelector('#analyze-photo');
+  button.disabled = true;
+  button.textContent = 'Foto wird analysiert …';
+  try {
+    const image = cameraData || await readResizedImage(file);
+    const response = await fetch(state.aiEndpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${aiToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image, prompt: state.context.prompt, context: { weather: state.context.weather, occasion: state.context.occasion, mood: state.context.mood } })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Analyse fehlgeschlagen (${response.status}).`);
+    const rawItems = Array.isArray(result) ? result : result.items;
+    if (!Array.isArray(rawItems) || !rawItems.length) throw new Error('Im Foto wurden keine Kleidungsstücke erkannt.');
+    await renderAnalysisResults(rawItems.slice(0, 12).map(normalizeDetection), image);
+  } catch (error) {
+    showToast(error.message || 'Die Foto-Analyse ist fehlgeschlagen.');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Mehrere Teile mit KI erkennen';
+  }
 }
 function openLookDialog() {
   if (state.items.length === 0) { showToast('Füge zuerst ein Kleidungsstück hinzu.'); setView('closet'); return; }
@@ -266,6 +411,7 @@ function recommendOutfit() {
     const labels = pieces.map(item => `${item.name} ${item.note || ''}`).join(' ').toLowerCase();
     let score = outfit.favorite ? 1 : 0;
     const reasons = [];
+    score += promptMatchScore(state.context.prompt, pieces);
     if (weather === 'cold' && categories.has('outerwear')) { score += 4; reasons.push('wärmende Schicht'); }
     if (weather === 'rainy' && categories.has('outerwear')) { score += 2; reasons.push('Jacke für wechselhaftes Wetter'); }
     if (weather === 'warm' && !categories.has('outerwear')) { score += 2; reasons.push('leichte Kombination'); }
@@ -323,6 +469,7 @@ function scoreCombination(items) {
   score -= items.reduce((total, item) => total + (item.wears || 0), 0) * 0.06;
   const categories = new Set(items.map(item => item.category));
   const { weather, occasion, mood } = state.context;
+  score += promptMatchScore(state.context.prompt, items);
   if (weather === 'cold' && categories.has('outerwear')) score += 4;
   if (weather === 'rainy' && categories.has('outerwear')) score += 3;
   if (weather === 'warm' && !categories.has('outerwear')) score += 2;
@@ -331,6 +478,21 @@ function scoreCombination(items) {
   if (mood === 'elegant' && categories.has('accessory')) score += 2;
   if (mood === 'bold' && new Set(items.map(item => item.color)).size > 2) score += 2;
   if (mood === 'minimal' && items.every(item => ['cream', 'black', 'blue'].includes(item.color))) score += 2;
+  return score;
+}
+function promptMatchScore(prompt, items) {
+  const text = (prompt || '').trim().toLowerCase();
+  if (!text) return 0;
+  let score = 0;
+  const colors = { cream: ['creme', 'beige', 'neutral'], black: ['schwarz', 'black'], blue: ['blau', 'blue', 'navy'], red: ['rot', 'red'], green: ['grün', 'gruen', 'green'], pink: ['rosa', 'pink'], yellow: ['gelb', 'yellow'] };
+  for (const item of items) {
+    if (item.name && text.includes(item.name.toLowerCase())) score += 4;
+    if (item.brand && text.includes(item.brand.toLowerCase())) score += 2;
+    if ((colors[item.color] || []).some(color => text.includes(color))) score += 2;
+  }
+  if (/bequem|locker|entspannt|casual/.test(text) && items.some(item => /jeans|strick|sneaker|locker/i.test(`${item.name} ${item.note || ''}`))) score += 2;
+  if (/elegant|schick|festlich/.test(text) && items.some(item => ['shoes', 'accessory', 'outerwear'].includes(item.category))) score += 2;
+  if (/warm|kalt|regen/.test(text) && items.some(item => item.category === 'outerwear')) score += 1;
   return score;
 }
 function createWardrobeOutfit() {
@@ -376,7 +538,7 @@ function showItemDetails(id) {
   const item = getItem(id);
   if (!item) return;
   const dialog = document.querySelector('#detail-dialog');
-  dialog.innerHTML = `${itemImage(item, 'detail-hero')}<div class="detail-dialog-content"><div class="dialog-header"><div><p class="eyebrow">${escapeHtml(categoryNames[item.category]).toUpperCase()}</p><h2>${escapeHtml(item.name)}</h2></div><button class="dialog-close" data-close-detail aria-label="Schließen">×</button></div><p>${escapeHtml(colorNames[item.color])}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}</p>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ''}<p>${item.wears || 0}× getragen</p><div class="detail-actions"><button class="delete" data-delete-item="${escapeHtml(item.id)}">Teil löschen</button><button data-edit-item="${escapeHtml(item.id)}">Bearbeiten</button><button data-wear="${escapeHtml(item.id)}">+ Als getragen markieren</button></div></div>`;
+  dialog.innerHTML = `${itemImage(item, 'detail-hero')}<div class="detail-dialog-content"><div class="dialog-header"><div><p class="eyebrow">${escapeHtml(categoryNames[item.category]).toUpperCase()}</p><h2>${escapeHtml(item.name)}</h2></div><button class="dialog-close" data-close-detail aria-label="Schließen">×</button></div><p>${escapeHtml(colorNames[item.color])}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.material ? ` · ${escapeHtml(item.material)}` : ''}</p>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ''}${item.palette?.length ? `<div class="item-palette detail-palette">${item.palette.map(color => `<i style="--swatch:${color}"></i>`).join('')}</div>` : ''}<p>${item.wears || 0}× getragen</p><div class="detail-actions"><button class="delete" data-delete-item="${escapeHtml(item.id)}">Teil löschen</button><button data-edit-item="${escapeHtml(item.id)}">Bearbeiten</button><button data-wear="${escapeHtml(item.id)}">+ Als getragen markieren</button></div></div>`;
   dialog.showModal();
 }
 function planDatePrompt(date) { openPlanDialog(date); }
@@ -388,9 +550,12 @@ document.querySelector('#empty-add').addEventListener('click', openItemDialog);
 document.querySelector('#create-look').addEventListener('click', openLookDialog);
 document.querySelector('#empty-look').addEventListener('click', openLookDialog);
 document.querySelector('#mix-closet').addEventListener('click', createWardrobeOutfit);
+document.querySelector('#settings-button').addEventListener('click', openSettings);
+document.querySelector('#profile-button').addEventListener('click', openSettings);
 document.querySelector('#plan-today').addEventListener('click', () => openPlanDialog(dateKey(new Date())));
 document.querySelector('#calendar-plan').addEventListener('click', () => openPlanDialog(dateKey(new Date())));
 document.querySelector('#recommend-look').addEventListener('click', () => {
+  state.context.prompt = document.querySelector('#daily-prompt').value.trim();
   const recommendation = recommendOutfit();
   if (!recommendation) { showToast('Füge erst Teile zu einem Outfit hinzu.'); return; }
   state.plans[dateKey(new Date())] = recommendation.outfit.id;
@@ -405,6 +570,88 @@ document.querySelector('#recommend-look').addEventListener('click', () => {
     saveState();
     document.querySelector('#recommendation-note').textContent = state.context.note;
   });
+});
+document.querySelector('#settings-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const endpoint = form.elements.aiEndpoint.value.trim();
+    const token = form.elements.aiToken.value.trim();
+  if (endpoint) {
+    let url;
+    try { url = new URL(endpoint); }
+    catch { showToast('Bitte gib eine gültige Server-URL ein.'); return; }
+    if (url.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(url.hostname)) {
+      showToast('Der KI-Server muss eine sichere HTTPS-Adresse verwenden.');
+      return;
+    }
+    if (!form.elements.aiConsent.checked) { showToast('Bestätige bitte den Foto-Upload an deinen KI-Server.'); return; }
+  }
+  state.aiEndpoint = endpoint;
+  state.aiConsent = Boolean(form.elements.aiConsent.checked);
+  aiToken = token;
+  saveState();
+  form.closest('dialog').close();
+  showToast(endpoint ? 'KI-Server gespeichert.' : 'KI-Analyse deaktiviert.');
+});
+document.querySelector('#clear-closet').addEventListener('click', () => {
+  document.querySelector('#settings-dialog').close();
+  document.querySelector('#clear-dialog').showModal();
+});
+document.querySelector('#clear-form').addEventListener('submit', event => {
+  if (event.submitter?.id !== 'confirm-clear') return;
+  event.preventDefault();
+  state.items = [];
+  state.outfits = [];
+  state.plans = {};
+  state.nextAdded = 1;
+  saveState();
+  event.currentTarget.closest('dialog').close();
+  renderAll();
+  setView('closet');
+  showToast('Dein Kleiderschrank wurde geleert.');
+});
+document.querySelector('#analysis-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!pendingAnalysis) return;
+  const cards = [...document.querySelectorAll('.analysis-item')].filter(card => card.querySelector('[data-analysis-include]').checked);
+  if (!cards.length) { showToast('Wähle mindestens ein erkanntes Teil aus.'); return; }
+  const button = event.currentTarget.querySelector('[type="submit"]');
+  button.disabled = true;
+  button.textContent = 'Teile werden gespeichert …';
+  try {
+    for (const card of cards) {
+      const detection = pendingAnalysis.items[Number(card.dataset.analysisIndex)];
+      const image = await cropImage(pendingAnalysis.sourceImage, detection.bbox);
+      const palette = detection.palette.length ? detection.palette : await extractPalette(pendingAnalysis.sourceImage, detection.bbox);
+      const selectedColor = card.querySelector('[data-analysis-color]').value;
+      const note = [detection.material, detection.note].filter(Boolean).join(' · ');
+      state.items.push({
+        id: `i${Date.now()}-${state.nextAdded}`,
+        name: card.querySelector('[data-analysis-name]').value.trim() || detection.name,
+        category: card.querySelector('[data-analysis-category]').value,
+        color: selectedColor,
+        palette,
+        material: detection.material,
+        brand: detection.brand,
+        note,
+        image,
+        wears: 0,
+        added: state.nextAdded++
+      });
+    }
+    saveState();
+    event.currentTarget.closest('dialog').close();
+    document.querySelector('#item-dialog').close();
+    pendingAnalysis = null;
+    renderAll();
+    setView('closet');
+    showToast(`${cards.length} ${cards.length === 1 ? 'Teil' : 'Teile'} in den Kleiderschrank übernommen.`);
+  } catch (error) {
+    showToast(error.message || 'Die erkannten Teile konnten nicht gespeichert werden.');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Auswahl speichern';
+  }
 });
 document.querySelector('#global-search').addEventListener('input', event => { searchTerm = event.target.value.trim(); renderCloset(); renderLooks(); });
 document.querySelector('#global-search').addEventListener('keydown', event => { if (event.key === 'Enter') setView('closet'); });
@@ -442,7 +689,7 @@ document.querySelector('#item-form').addEventListener('submit', async event => {
     try { image = await readResizedImage(photo); }
     catch { showToast('Das Foto konnte nicht geladen werden.'); return; }
   }
-  const item = { id: existing?.id || `i${Date.now()}`, name: values.get('name').trim(), category: values.get('category'), color: values.get('color'), brand: values.get('brand').trim(), note: values.get('note').trim(), image, wears: existing?.wears || 0, added: existing?.added || state.nextAdded++ };
+  const item = { id: existing?.id || `i${Date.now()}`, name: values.get('name').trim(), category: values.get('category'), color: values.get('color'), palette: existing?.palette || [], material: existing?.material || '', brand: values.get('brand').trim(), note: values.get('note').trim(), image, wears: existing?.wears || 0, added: existing?.added || state.nextAdded++ };
   if (existing) state.items[state.items.indexOf(existing)] = item;
   else state.items.push(item);
   saveState(); form.closest('dialog').close(); renderAll(); setView('closet'); showToast(existing ? 'Änderungen gespeichert.' : 'Teil wurde deinem Kleiderschrank hinzugefügt.');
@@ -481,7 +728,5 @@ document.querySelector('#export-data').addEventListener('click', () => {
   const url = URL.createObjectURL(blob), anchor = document.createElement('a');
   anchor.href = url; anchor.download = 'morgen-kleiderschrank.json'; anchor.click(); URL.revokeObjectURL(url); showToast('Deine Daten wurden exportiert.');
 });
-document.querySelector('#profile-button').addEventListener('click', () => showToast('Deine Daten bleiben auf diesem Gerät.'));
-
 initializePhotoCapture();
 renderAll();
