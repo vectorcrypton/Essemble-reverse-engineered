@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f2">
+  <title>Morgen — Outfitplaner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Hauptnavigation">
+      <a class="wordmark" href="#today" aria-label="Morgen Startseite"><span class="mark">m</span><span>MORGEN<span class="wordmark-dot">.</span></span></a>
+      <div class="side-caption">DEIN STIL, DEIN RHYTHMUS</div>
+      <nav class="main-nav">
+        <button class="nav-link active" data-view="today"><span class="nav-icon">◷</span>Heute</button>
+        <button class="nav-link" data-view="closet"><span class="nav-icon">▤</span>Kleiderschrank<span class="nav-count" id="item-count">0</span></button>
+        <button class="nav-link" data-view="looks"><span class="nav-icon">✳</span>Outfits</button>
+        <button class="nav-link" data-view="calendar"><span class="nav-icon">▦</span>Kalender</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-note"><span class="note-spark">✦</span><div><strong>Weniger Grübeln.</strong><br>Mehr Lieblingslooks.</div></div>
+        <button class="profile-button" id="profile-button"><span class="avatar">L</span><span><strong>Dein Style Space</strong><small>Lokales Profil</small></span><span class="profile-more">···</span></button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb"><span>DEIN KLEIDERSCHRANK</span><span class="crumb-slash">/</span><strong id="topbar-title">HEUTE</strong></div>
+        <div class="top-actions">
+          <label class="search-box"><span aria-hidden="true">⌕</span><input id="global-search" type="search" placeholder="In deinem Schrank suchen" aria-label="Kleidung durchsuchen"><kbd>⌘ K</kbd></label>
+          <button class="icon-button" id="quick-add" title="Kleidungsstück hinzufügen" aria-label="Kleidungsstück hinzufügen">＋</button>
+        </div>
+      </header>
+
+      <section class="view active" id="view-today" aria-labelledby="today-heading">
+        <div class="page-intro today-intro">
+          <div><p class="eyebrow" id="today-date"></p><h1 id="today-heading">Guten Morgen, <span>Lisa.</span></h1><p class="intro-copy">Dein Tag steht. Dein Look auch.</p></div>
+          <button class="primary-button" id="plan-today"><span>＋</span> Outfit planen</button>
+        </div>
+        <div class="week-strip" id="week-strip" aria-label="Wochentage"></div>
+        <div class="today-layout">
+          <article class="today-feature" id="today-feature"></article>
+          <aside class="today-aside">
+            <section class="mini-panel weather-panel"><div class="panel-kicker">DEIN STYLING-BRIEFING <span>KI ✦</span></div><div class="styling-context"><label>Wetter<select id="context-weather"><option value="mild">Mild</option><option value="cold">Kalt</option><option value="warm">Warm</option><option value="rainy">Regnerisch</option></select></label><label>Anlass<select id="context-occasion"><option value="everyday">Alltag</option><option value="office">Büro</option><option value="date">Date</option><option value="event">Event</option><option value="travel">Reise</option></select></label><label>Stimmung<select id="context-mood"><option value="relaxed">Entspannt</option><option value="elegant">Elegant</option><option value="bold">Mutig</option><option value="minimal">Minimal</option></select></label></div><button class="primary-button recommend-button" id="recommend-look">Look empfehlen <span>✦</span></button><p class="recommendation-note" id="recommendation-note" aria-live="polite">Dein Stil, Wetter und Anlass fließen in den Vorschlag ein.</p></section>
+            <section class="mini-panel next-panel"><div class="panel-kicker">ALS NÄCHSTES <button class="text-button" data-view="calendar">Kalender öffnen ↗</button></div><div id="next-plans"></div></section>
+            <section class="quote-panel"><span class="quote-mark">“</span><p>Stil ist, wenn du dich in deiner Kleidung ganz wie du selbst fühlst.</p><span class="quote-credit">DEIN KLEINER STILMOMENT</span></section>
+          </aside>
+        </div>
+        <section class="section-block"><div class="section-heading"><div><p class="eyebrow">AUS DEINEM SCHRANK</p><h2>Heute im Mix</h2></div><button class="text-button" data-view="closet">Alles ansehen ↗</button></div><div class="today-items" id="today-items"></div></section>
+      </section>
+
+      <section class="view" id="view-closet" aria-labelledby="closet-heading">
+        <div class="page-intro"><div><p class="eyebrow">DEINE LIEBLINGSSTÜCKE</p><h1 id="closet-heading">Kleiderschrank<span class="heading-period">.</span></h1><p class="intro-copy">Alles, was du liebst. Alles an einem Ort.</p></div><button class="primary-button" id="add-item"><span>＋</span> Teil hinzufügen</button></div>
+        <div class="toolbar"><div class="filter-tabs" id="closet-filters"><button class="filter-chip selected" data-filter="all">Alles <span id="all-count">0</span></button><button class="filter-chip" data-filter="top">Oberteile</button><button class="filter-chip" data-filter="bottom">Hosen & Röcke</button><button class="filter-chip" data-filter="outerwear">Jacken</button><button class="filter-chip" data-filter="shoes">Schuhe</button><button class="filter-chip" data-filter="accessory">Accessoires</button></div><select class="sort-select" id="sort-items" aria-label="Kleidung sortieren"><option value="recent">Zuletzt hinzugefügt</option><option value="name">Name A–Z</option></select></div>
+        <div class="closet-grid" id="closet-grid"></div>
+        <div class="empty-state hidden" id="closet-empty"><span class="empty-icon">▤</span><h2>Noch nichts in dieser Auswahl</h2><p>Füge ein Teil hinzu oder wähle eine andere Kategorie.</p><button class="secondary-button" id="empty-add">＋ Teil hinzufügen</button></div>
+      </section>
+
+      <section class="view" id="view-looks" aria-labelledby="looks-heading">
+        <div class="page-intro"><div><p class="eyebrow">KOMBINIERT & BEREIT</p><h1 id="looks-heading">Deine Outfits<span class="heading-period">.</span></h1><p class="intro-copy">Kombinationen, auf die du dich morgen schon freust.</p></div><button class="primary-button" id="create-look"><span>＋</span> Outfit erstellen</button></div>
+        <div class="looks-toolbar"><div class="filter-tabs" id="look-filters"><button class="filter-chip selected" data-filter="all">Alle Outfits</button><button class="filter-chip" data-filter="favorite">Favoriten <span>♥</span></button></div><button class="secondary-button closet-mix-button" id="mix-closet">✦ Mix aus Schrank</button><span class="subtle-label" id="look-count"></span></div>
+        <div class="looks-grid" id="looks-grid"></div>
+        <div class="empty-state hidden" id="looks-empty"><span class="empty-icon">✳</span><h2>Dein erstes Outfit wartet</h2><p>Stelle aus deinen Lieblingsteilen eine Kombination zusammen.</p><button class="primary-button" id="empty-look">＋ Outfit erstellen</button></div>
+      </section>
+
+      <section class="view" id="view-calendar" aria-labelledby="calendar-heading">
+        <div class="page-intro"><div><p class="eyebrow">MIT LEICHTIGKEIT VORAUSPLANEN</p><h1 id="calendar-heading">Outfitkalender<span class="heading-period">.</span></h1><p class="intro-copy">Ein guter Look weniger, um den du morgens nachdenken musst.</p></div><button class="primary-button" id="calendar-plan"><span>＋</span> Tag planen</button></div>
+        <div class="calendar-wrap"><div class="calendar-top"><div><p class="eyebrow">DEINE WOCHE, DEIN LOOK</p><h2 id="calendar-month"></h2></div><div class="calendar-controls"><button class="icon-button light" id="prev-month" aria-label="Vorheriger Monat">‹</button><button class="text-button" id="today-month">Heute</button><button class="icon-button light" id="next-month" aria-label="Nächster Monat">›</button></div></div><div class="calendar-grid" id="calendar-grid"></div></div>
+        <div class="calendar-legend"><span><i class="legend-dot planned"></i> Outfit geplant</span><span><i class="legend-dot today-dot"></i> Heute</span><span id="calendar-hint">Wähle einen Tag, um ein Outfit zu planen.</span></div>
+      </section>
+      <footer class="app-footer"><span>MORGEN<span class="wordmark-dot">.</span></span><span>Dein Stil bleibt deiner.</span><button class="text-button" id="export-data">Daten exportieren ↓</button></footer>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="Mobile Navigation"><button class="active" data-view="today"><span>◷</span>Heute</button><button data-view="closet"><span>▤</span>Schrank</button><button data-view="looks"><span>✳</span>Outfits</button><button data-view="calendar"><span>▦</span>Kalender</button></nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog class="app-dialog" id="item-dialog"><form method="dialog" id="item-form"><input type="hidden" name="itemId"><div class="dialog-header"><div><p class="eyebrow">NEUES LIEBLINGSSTÜCK</p><h2>Teil hinzufügen</h2></div><button class="dialog-close" value="cancel" aria-label="Schließen">×</button></div><label class="field-label">Name<input name="name" required maxlength="60" placeholder="z. B. Weißes Leinenhemd"></label><div class="field-row"><label class="field-label">Kategorie<select name="category" required><option value="top">Oberteil</option><option value="bottom">Hose / Rock</option><option value="outerwear">Jacke</option><option value="shoes">Schuhe</option><option value="accessory">Accessoire</option></select></label><label class="field-label">Farbe<select name="color"><option value="cream">Creme</option><option value="black">Schwarz</option><option value="blue">Blau</option><option value="red">Rot</option><option value="green">Grün</option><option value="pink">Rosa</option><option value="yellow">Gelb</option><option value="multi">Mehrfarbig</option></select></label></div><label class="field-label">Eigenes Foto <span class="optional">OPTIONAL · BLEIBT AUF DIESEM GERÄT</span><input name="photo" type="file" accept="image/*" capture="environment"></label><label class="field-label">Marke <span class="optional">OPTIONAL</span><input name="brand" maxlength="40" placeholder="Marke oder Shop"></label><label class="field-label">Notiz <span class="optional">OPTIONAL</span><input name="note" maxlength="90" placeholder="Passform, Anlass, Erinnerungen …"></label><div class="dialog-actions"><button class="secondary-button" value="cancel">Abbrechen</button><button class="primary-button" type="submit">Teil speichern</button></div></form></dialog>
+
+  <dialog class="app-dialog wide-dialog" id="look-dialog"><form method="dialog" id="look-form"><div class="dialog-header"><div><p class="eyebrow">DEINE KOMBI, DEIN MOMENT</p><h2>Outfit zusammenstellen</h2></div><button class="dialog-close" value="cancel" aria-label="Schließen">×</button></div><label class="field-label">Name deines Outfits<input name="name" required maxlength="60" placeholder="z. B. Büro in Leinen"></label><div class="look-picker" id="look-picker"></div><div class="dialog-actions"><button class="secondary-button" value="cancel">Abbrechen</button><button class="primary-button" type="submit">Outfit speichern</button></div></form></dialog>
+
+  <dialog class="app-dialog" id="plan-dialog"><form method="dialog" id="plan-form"><div class="dialog-header"><div><p class="eyebrow">DEIN TAG, SCHON SORTIERT</p><h2>Outfit einplanen</h2></div><button class="dialog-close" value="cancel" aria-label="Schließen">×</button></div><label class="field-label">Tag<input name="date" type="date" required></label><label class="field-label">Outfit<select name="outfit" required></select></label><div class="dialog-actions"><button class="secondary-button" value="cancel">Abbrechen</button><button class="primary-button" type="submit">Eintragen</button></div></form></dialog>
+
+  <dialog class="app-dialog" id="detail-dialog"></dialog>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
